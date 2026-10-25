@@ -1,0 +1,65 @@
+name: Build DFS Optimization
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.2.1'
+
+      - name: Build jar
+        run: gradle build -x test --stacktrace
+
+      - name: Check jar contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          JAR='build/libs/dfs-optimization-1.21.11-fabric.jar'
+          if [[ ! -f "$JAR" ]]; then
+            echo "ERROR: Expected JAR was not created: $JAR"
+            echo "Files in build/libs:"
+            ls -la build/libs || true
+            exit 1
+          fi
+
+          echo "JAR file: $JAR"
+          jar tf "$JAR" > /tmp/dfs-jar-contents.txt
+          echo "JAR entry count: $(wc -l < /tmp/dfs-jar-contents.txt)"
+          echo "Relevant entries:"
+          grep -E '(^|/)(fabric\.mod\.json|icon\.png|DfsOptimizationClient\.class)$' /tmp/dfs-jar-contents.txt || true
+
+          for entry in \
+            'fabric.mod.json' \
+            'assets/dfsoptimization/icon.png' \
+            'com/dfsstudio/dfsoptimization/DfsOptimizationClient.class'; do
+            if ! grep -Fxq "$entry" /tmp/dfs-jar-contents.txt; then
+              echo "ERROR: Required entry is missing from JAR: $entry"
+              echo "Full JAR contents follow:"
+              cat /tmp/dfs-jar-contents.txt
+              exit 1
+            fi
+          done
+          echo 'JAR contents check passed.'
+
+      - name: Upload jar
+        uses: actions/upload-artifact@v4
+        with:
+          name: dfs-optimization-1.21.11-fabric
+          path: build/libs/dfs-optimization-1.21.11-fabric.jar
+          if-no-files-found: error
+
+      - name: Unit tests
+        run: gradle test --stacktrace
+        continue-on-error: true
